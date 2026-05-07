@@ -14,7 +14,7 @@ Usage:
 
     # SV (per-instance Slerp)
     python main_sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
-                       --method sv --acts_cache /scratch/.../acts_cache.pt \
+                       --method slerp --acts_cache /scratch/.../acts_cache.pt \
                        --alpha 0.1 --layer 15 --output_dir outputs/main/sv_1.5B_gsm8k
 """
 from __future__ import annotations
@@ -422,12 +422,12 @@ def main():
     ap.add_argument("--dataset", required=True, choices=["gsm8k", "math", "mbpp", "strategyqa"])
     ap.add_argument("--model_path", required=True, help="HF name or local dir")
     ap.add_argument("--method", required=True,
-                    choices=["plain", "sv", "mean_sv_add", "per_inst_add",
+                    choices=["plain", "slerp", "mean_sv_add", "per_inst_add",
                              "random_gauss", "sv_first_k", "sv_multi_layer"])
     ap.add_argument("--k", type=int, default=32,
-                    help="(method=sv_first_k) # of leading answer tokens to steer")
+                    help="(method=slerp_first_k) # of leading answer tokens to steer")
     ap.add_argument("--multi_layers", default="10,15,20",
-                    help="(method=sv_multi_layer) comma-sep layers for per-inst Slerp")
+                    help="(method=slerp_multi_layer) comma-sep layers for per-inst Slerp")
     ap.add_argument("--output_dir", required=True)
     ap.add_argument("--cache_dir", default=CACHE_DIR)
 
@@ -447,7 +447,7 @@ def main():
     ap.add_argument("--layer", type=int, default=-1, help="L/2 if -1 (auto-resolve)")
     ap.add_argument("--acts_cache", default=None,
                     help="path to .pt file with {'gt_acts': [N, L, D], 'pred_acts': [N, L, D]} "
-                         "or {'delta': [N, D]} at chosen layer. Required for method=sv.")
+                         "or {'delta': [N, D]} at chosen layer. Required for method=slerp.")
     ap.add_argument("--distill_teacher_json", default=None,
                     help="If given, use teacher_json's pred text as assistant content "
                          "instead of ex['answer']. Hard distillation.")
@@ -551,7 +551,7 @@ def main():
             return d.to(torch.float32), valid
         return d.to(torch.float32)
 
-    if args.method == "sv":
+    if args.method == "slerp":
         deltas = _load_deltas_raw()
         # Unit-normalise per-instance (v2 per-inst Slerp semantics)
         norms = deltas.norm(dim=-1, keepdim=True).clamp_min(1e-12)
@@ -682,7 +682,7 @@ def main():
     # sv_first_k / sv_multi_layer. mean_sv_add uses a global direction — still needs
     # labels but no per-sample idx; use PerSampleSFTTrainer anyway to populate
     # state.current_labels.
-    _sv_like = {"sv", "mean_sv_add", "per_inst_add", "random_gauss",
+    _sv_like = {"slerp", "mean_sv_add", "per_inst_add", "random_gauss",
                 "sv_first_k", "sv_multi_layer"}
     TrainerCls = PerSampleSFTTrainer if args.method in _sv_like else SteerAnswerOnlyTrainer
     kwargs = dict(

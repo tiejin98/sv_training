@@ -50,7 +50,7 @@ Plain SFT or SV-SFT. The model trains on the dataset GT answers, optionally with
        compute_acts.py            (one run per student × dataset)
               │
               ▼  *_acts.pt + *_bootpreds.json
-       sft.py                     --method ∈ {plain, sv, mean_sv_add, per_inst_add,
+       sft.py                     --method ∈ {plain, slerp, mean_sv_add, per_inst_add,
               │                              random_gauss, sv_first_k, sv_multi_layer}
               ▼  output adapter
        infer_sv_vllm.py           (--alpha 0 = inference without SV (paper setting); --alpha >0 = inference-time SV)
@@ -101,13 +101,26 @@ python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
 
 # Per-instance Slerp SV-SFT (rotate h toward each instance's GT-direction)
 python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
-    --method sv --alpha 0.1 --layer 15 \
+    --method slerp --alpha 0.1 --layer 15 \
     --acts_cache 1.5B-gsm8k_acts.pt \
     --output_dir outputs/slerp-1.5B-gsm8k
 ```
 
 For Mean-SV-Add you can skip the acts cache and pass a precomputed
 direction: `--mean_dir_override sv_1.5b_gsm8k_layer15_meansv_direction.pt`.
+
+**Per-instance Slerp (`--method slerp`) needs the full per-instance deltas, so
+the bundled direction file is not sufficient — you must run `compute_acts.py`
+first to produce `*_acts.pt`.** Then:
+
+```bash
+python compute_acts.py --model Qwen/Qwen2.5-1.5B-Instruct \
+    --dataset gsm8k --out_path 1.5B-gsm8k_acts.pt
+python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
+    --method slerp --alpha 0.1 --layer 15 \
+    --acts_cache 1.5B-gsm8k_acts.pt \
+    --output_dir outputs/slerp-1.5B-gsm8k
+```
 
 **3. `infer_sv_vllm.py` — evaluate**
 
@@ -137,8 +150,8 @@ the layer's residual stream during decode.
 ## Distillation
 
 The student trains on a teacher's outputs (instead of dataset GT), optionally
-with a steering vector pointing from "student-bootstrap output" to
-"teacher output".
+with a steering vector pointing from "student-bootstrap manifold" to
+"teacher manifold".
 
 ### Run order
 
@@ -168,7 +181,7 @@ Distills Qwen3-8B (thinking-mode) into Qwen2.5-1.5B-Instruct on GSM8K with
 Mean-SV-Add (α=0.5, layer 15). Uses the bundled `teacher_Qwen3-8B-gsm8k-think.json`
 and `student_1.5B-gsm8k-bootpreds.json`, so only the last three steps run:
 `compute_distill_acts.py` → `sft.py` → `infer_sv_vllm.py` (×2). About 40 min
-on one GPU.
+on one 80 GB GPU.
 
 ### Per-script reference (distillation-only)
 
@@ -228,7 +241,7 @@ python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
 
 # Per-instance Slerp distillation
 python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
-    --method sv --alpha 0.1 --layer 15 \
+    --method slerp --alpha 0.1 --layer 15 \
     --acts_cache distill_1.5B__Qwen3-8B--gsm8k--think.pt \
     --distill_teacher_json teacher_Qwen3-8B--gsm8k--think.json \
     --output_dir outputs/slerp-distill-1.5B
@@ -236,7 +249,6 @@ python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
 
 Eval is the same `infer_sv_vllm.py` as in the SFT section; just point
 `--acts_cache` at the distillation cache when you want inference-time SV.
-
 ---
 
 ## Notes
