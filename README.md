@@ -1,8 +1,5 @@
-# SV-SFT and SV-Distillation — code release
+# SV_training
 
-A small set of scripts. No package install — run them directly. The two parts
-(plain/SV SFT, and distillation from a teacher) share the same codebase but
-have separate run orders and bundled examples; see the two sections below.
 
 ## What's here
 
@@ -34,23 +31,18 @@ sv_1.5b_gsm8k_layer15_meansv.pt             same v as the direction file but in
                                             {"raw_mean_vectors": {"block_15": v}} format
 ```
 
-The two JSONs are symlinks into the project workdir to save space; replace
-with `cp -L` for a self-contained tarball.
 
 ## Dependencies
 
 Python 3.12 with `torch`, `transformers`, `peft`, `datasets`, `accelerate`,
 `vllm`, `tqdm`. Optional `math-verify` for stricter LaTeX equivalence on
-MATH/AIME. Single 80 GB GPU is enough for either bundled example.
-
-`HF_HOME` should point at a disk with ≥30 GB free.
+MATH/AIME. For `transformers`, we use a version <5.0.
 
 ---
 
 ## SFT
 
-Plain SFT or SV-SFT — the student trains on dataset GT answers, optionally
-with a steering vector injected during training.
+Plain SFT or SV-SFT. The model trains on the dataset GT answers, optionally with a steering vector injected during training.
 
 ### Run order
 
@@ -61,13 +53,13 @@ with a steering vector injected during training.
        sft.py                     --method ∈ {plain, sv, mean_sv_add, per_inst_add,
               │                              random_gauss, sv_first_k, sv_multi_layer}
               ▼  output adapter
-       infer_sv_vllm.py           (--alpha 0 = plain inference; --alpha >0 = inference-time SV)
+       infer_sv_vllm.py           (--alpha 0 = inference without SV (paper setting); --alpha >0 = inference-time SV)
 ```
 
 ### Quick start
 
 ```bash
-# Full pipeline (~55 min on one 80 GB GPU)
+# Full pipeline (~55 min on one GPU)
 bash run_sft_example.sh
 
 # Skip Step A by reusing the bundled v_mean (~30 min total instead of ~55)
@@ -145,8 +137,8 @@ the layer's residual stream during decode.
 ## Distillation
 
 The student trains on a teacher's outputs (instead of dataset GT), optionally
-with a steering vector pointing from "student-bootstrap manifold" to
-"teacher manifold".
+with a steering vector pointing from "student-bootstrap output" to
+"teacher output".
 
 ### Run order
 
@@ -176,7 +168,7 @@ Distills Qwen3-8B (thinking-mode) into Qwen2.5-1.5B-Instruct on GSM8K with
 Mean-SV-Add (α=0.5, layer 15). Uses the bundled `teacher_Qwen3-8B-gsm8k-think.json`
 and `student_1.5B-gsm8k-bootpreds.json`, so only the last three steps run:
 `compute_distill_acts.py` → `sft.py` → `infer_sv_vllm.py` (×2). About 40 min
-on one 80 GB GPU.
+on one GPU.
 
 ### Per-script reference (distillation-only)
 
