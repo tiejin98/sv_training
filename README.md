@@ -25,8 +25,11 @@ run_thinking_distill_example.sh        end-to-end driver for the distillation ex
 # bundled working samples
 sv_1.5b_gsm8k_layer15_meansv_direction.pt   precomputed v_mean for the SFT example
                                             (lets you skip Step A in run_sft_example.sh)
-teacher_Qwen3-8B-gsm8k-think.json           ~7K Qwen3-8B (thinking-mode) generations on GSM8K train
-student_1.5B-gsm8k-bootpreds.json           Qwen2.5-1.5B-Instruct bootstrap predictions on GSM8K train
+teacher_Qwen3-8B-math-think.json.zip        ~7.5K Qwen3-8B (thinking-mode) generations on MATH train
+                                            (compressed; auto-unzipped by the example script,
+                                             or `unzip teacher_Qwen3-8B-math-think.json.zip`)
+student_1.5B-math-bootpreds.json            Qwen2.5-1.5B-Instruct bootstrap predictions on MATH train
+                                            (used by compute_distill_acts.py in the distillation example)
 sv_1.5b_gsm8k_layer15_meansv.pt             same v as the direction file but in
                                             {"raw_mean_vectors": {"block_15": v}} format
 ```
