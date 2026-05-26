@@ -59,10 +59,10 @@ Plain SFT or SV-SFT. The model trains on the dataset GT answers, optionally with
 ### Quick start
 
 ```bash
-# Full pipeline (~55 min on one GPU)
+# Full pipeline
 bash run_sft_example.sh
 
-# Skip Step A by reusing the bundled v_mean (~30 min total instead of ~55)
+# Skip Step A by reusing the bundled v_mean
 SKIP_ACTS=1 bash run_sft_example.sh
 ```
 
@@ -149,9 +149,7 @@ the layer's residual stream during decode.
 
 ## Distillation
 
-The student trains on a teacher's outputs (instead of dataset GT), optionally
-with a steering vector pointing from "student-bootstrap manifold" to
-"teacher manifold".
+The student trains on a teacher's outputs,  with a steering vector.
 
 ### Run order
 
@@ -174,14 +172,15 @@ with a steering vector pointing from "student-bootstrap manifold" to
 ### Quick start
 
 ```bash
+unzip teacher_Qwen3-8B-math-think.json.zip    # one-time (the example script also does this automatically)
 bash run_thinking_distill_example.sh
 ```
 
-Distills Qwen3-8B (thinking-mode) into Qwen2.5-1.5B-Instruct on GSM8K with
-Mean-SV-Add (α=0.5, layer 15). Uses the bundled `teacher_Qwen3-8B-gsm8k-think.json`
-and `student_1.5B-gsm8k-bootpreds.json`, so only the last three steps run:
-`compute_distill_acts.py` → `sft.py` → `infer_sv_vllm.py` (×2). About 40 min
-on one 80 GB GPU.
+Distills Qwen3-8B (thinking-mode) into Qwen2.5-1.5B-Instruct on **MATH** with
+Mean-SV-Add (α=0.5, layer 15). Uses the bundled `teacher_Qwen3-8B-math-think.json`
+and `student_1.5B-math-bootpreds.json`, so only the last three steps run:
+`compute_distill_acts.py` → `sft.py` → `infer_sv_vllm.py` (×2). 
+
 
 ### Per-script reference (distillation-only)
 
@@ -193,10 +192,10 @@ section. Two extras:
 ```bash
 python teacher_gen.py \
     --model Qwen/Qwen3-8B \
-    --dataset gsm8k \
+    --dataset math \
     --split train \
     --enable_thinking 1 \
-    --out teacher_Qwen3-8B--gsm8k--think.json
+    --out teacher_Qwen3-8B--math--think.json
 ```
 
 Output: a JSON list of `{"question": ..., "pred": ..., "idx": ...}` records.
@@ -208,10 +207,10 @@ For thinking-mode teachers the `<think>...</think>` chain is preserved in
 ```bash
 python compute_distill_acts.py \
     --student Qwen/Qwen2.5-1.5B-Instruct \
-    --teacher_json teacher_Qwen3-8B--gsm8k--think.json \
-    --student_preds_json 1.5B-gsm8k_acts_bootpreds.json \
-    --dataset gsm8k \
-    --out distill_1.5B__Qwen3-8B--gsm8k--think.pt
+    --teacher_json teacher_Qwen3-8B--math--think.json \
+    --student_preds_json 1.5B-math_acts_bootpreds.json \
+    --dataset math \
+    --out distill_1.5B__Qwen3-8B--math--think.pt
 ```
 
 Same shape as `compute_acts.py`'s output, but `gt_acts` is on
@@ -227,28 +226,30 @@ GT-token SFT to teacher-token distillation. The acts cache passed to
 
 ```bash
 # Plain distillation (no SV; learn teacher tokens only)
-python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
+python sft.py --dataset math --model_path Qwen/Qwen2.5-1.5B-Instruct \
     --method plain \
-    --distill_teacher_json teacher_Qwen3-8B--gsm8k--think.json \
-    --output_dir outputs/plain-distill-1.5B
+    --distill_teacher_json teacher_Qwen3-8B--math--think.json \
+    --output_dir outputs/plain-distill-1.5B-math
 
 # Mean-SV-Add distillation
-python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
+python sft.py --dataset math --model_path Qwen/Qwen2.5-1.5B-Instruct \
     --method mean_sv_add --alpha 0.5 --layer 15 \
-    --acts_cache distill_1.5B__Qwen3-8B--gsm8k--think.pt \
-    --distill_teacher_json teacher_Qwen3-8B--gsm8k--think.json \
-    --output_dir outputs/meansv-distill-1.5B
+    --acts_cache distill_1.5B__Qwen3-8B--math--think.pt \
+    --distill_teacher_json teacher_Qwen3-8B--math--think.json \
+    --output_dir outputs/meansv-distill-1.5B-math
 
 # Per-instance Slerp distillation
-python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
+python sft.py --dataset math --model_path Qwen/Qwen2.5-1.5B-Instruct \
     --method slerp --alpha 0.1 --layer 15 \
-    --acts_cache distill_1.5B__Qwen3-8B--gsm8k--think.pt \
-    --distill_teacher_json teacher_Qwen3-8B--gsm8k--think.json \
-    --output_dir outputs/slerp-distill-1.5B
+    --acts_cache distill_1.5B__Qwen3-8B--math--think.pt \
+    --distill_teacher_json teacher_Qwen3-8B--math--think.json \
+    --output_dir outputs/slerp-distill-1.5B-math
 ```
+
 
 Eval is the same `infer_sv_vllm.py` as in the SFT section; just point
 `--acts_cache` at the distillation cache when you want inference-time SV.
+
 ---
 
 ## Notes
