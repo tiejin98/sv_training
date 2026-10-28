@@ -1,0 +1,1 @@
+{"exp": "slerp-perinst-1.5B-gsm8k-callbackeval", "dataset": "gsm8k", "split": "test", "n": 1319, "accuracy": 0.640636846095527, "avg_tokens": 137.7202426080364, "model_path": "sft_v2/sv_slerp_per_instance/epoch-1", "enable_thinking": false}

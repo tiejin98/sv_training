@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sv-training"
+dynamic = ["version"]
+description = "Steering vectors as a training signal in LLM post-training (NeurIPS 2026)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Tiejin Chen" },
+  { name = "Maunil Vyas" },
+  { name = "Huaiyuan Yao" },
+  { name = "Hua Wei" },
+]
+keywords = ["steering vectors", "activation steering", "fine-tuning", "distillation", "LLM", "LoRA"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "torch>=2.1",
+  "transformers>=4.46,<5",
+  "peft>=0.12",
+  "accelerate>=0.30",
+  "datasets>=2.18",
+  "safetensors>=0.4",
+  "numpy>=1.24",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+vllm = ["vllm>=0.10"]
+math = ["math-verify>=0.7"]
+wandb = ["wandb"]
+all = ["vllm>=0.10", "math-verify>=0.7", "wandb"]
+dev = ["pytest>=8.0", "build>=1.2", "twine>=5.0"]
+
+[project.scripts]
+sv-train = "sv_training.cli:main"
+sv-training = "sv_training.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/tiejin98/sv_training"
+Repository = "https://github.com/tiejin98/sv_training"
+Issues = "https://github.com/tiejin98/sv_training/issues"
+
+[tool.setuptools]
+packages = ["sv_training"]
+
+[tool.setuptools.dynamic]
+version = { attr = "sv_training.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

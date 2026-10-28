@@ -1,0 +1,1 @@
+{"exp": "D-1.5B__Qwen3-8B--gsm8k--think-rawmeansv-a0.5", "dataset": "gsm8k", "split": "test", "n": 1319, "accuracy": 0.6755117513267627, "avg_tokens": 668.475360121304, "model_path": "outputs/main/D-1.5B__Qwen3-8B--gsm8k--think--rawmeansv-a0.5", "enable_thinking": false}

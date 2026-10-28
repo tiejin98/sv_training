@@ -1,261 +1,242 @@
-# SV_training
+# Steering Vectors as a Training Signal in LLM Post-Training
 
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![PyPI](https://img.shields.io/pypi/v/sv-training.svg)](https://pypi.org/project/sv-training/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/tiejin98/sv_training/actions/workflows/ci.yml/badge.svg)](https://github.com/tiejin98/sv_training/actions/workflows/ci.yml)
 
-## What's here
+Code for the NeurIPS 2026 paper **"Steering Vectors as a Training Signal in LLM
+Post-Training"** (Tiejin Chen, Maunil Vyas, Huaiyuan Yao, Hua Wei; Arizona State University).
 
-```
-README.md                              this file
-sft.py                                 train a student via plain SFT or SV-SFT
-                                       (also supports distillation via --distill_teacher_json)
-compute_acts.py                        student bootstrap predictions + per-layer hidden caches → .pt
-compute_distill_acts.py                build a teacher-vs-student acts cache for SV-distillation
-teacher_gen.py                         generate a teacher's predictions on a dataset (vLLM)
-infer_sv_vllm.py                       evaluate a (LoRA or merged) model with optional inference-time
-                                       SV at one layer; supports GSM8K / MATH / MBPP / StrategyQA /
-                                       AIME-24 / AIME-25
+Steering vectors (SVs) are usually added to a frozen model's hidden states at
+inference time. This repository uses them **during training**: an SV is
+injected into the residual stream at one layer, on answer tokens only, while
+the model is fine-tuned with teacher forcing. The direction points from where
+the model's own outputs sit to where the reference outputs (dataset answers or
+a teacher's outputs) sit, which reduces the off-policy gap of SFT and
+distillation. Nothing is injected at test time, so any gain is stored in the weights.
 
-dataset_utils.py                       unified dataset adapters
-_steering_helpers.py                   slerp_rotate + Trainer subclass that exposes labels to forward hooks
-beegfs_safe_save.py                    /tmp staged write helper for flaky network filesystems (optional)
-exploration_code/_dataset_utils_base.py  legacy base loader (wrapped by dataset_utils.py)
+The `sv-training` package covers the supervised regime of the paper (SFT and
+distillation). It works with any steering vector at any layer(s), so you can
+also train with directions you computed yourself.
 
-run_sft_example.sh                     end-to-end driver for the SFT example
-run_thinking_distill_example.sh        end-to-end driver for the distillation example
-
-# bundled working samples
-sv_1.5b_gsm8k_layer15_meansv_direction.pt   precomputed v_mean for the SFT example
-                                            (lets you skip Step A in run_sft_example.sh)
-teacher_Qwen3-8B-gsm8k-think.json           ~7K Qwen3-8B (thinking-mode) generations on GSM8K train
-student_1.5B-gsm8k-bootpreds.json           Qwen2.5-1.5B-Instruct bootstrap predictions on GSM8K train
-sv_1.5b_gsm8k_layer15_meansv.pt             same v as the direction file but in
-                                            {"raw_mean_vectors": {"block_15": v}} format
-```
-
-
-## Dependencies
-
-Python 3.12 with `torch`, `transformers`, `peft`, `datasets`, `accelerate`,
-`vllm`, `tqdm`. Optional `math-verify` for stricter LaTeX equivalence on
-MATH/AIME. For `transformers`, we use a version <5.0.
-
----
-
-## SFT
-
-Plain SFT or SV-SFT. The model trains on the dataset GT answers, optionally with a steering vector injected during training.
-
-### Run order
-
-```
-       compute_acts.py            (one run per student × dataset)
-              │
-              ▼  *_acts.pt + *_bootpreds.json
-       sft.py                     --method ∈ {plain, slerp, mean_sv_add, per_inst_add,
-              │                              random_gauss, sv_first_k, sv_multi_layer}
-              ▼  output adapter
-       infer_sv_vllm.py           (--alpha 0 = inference without SV (paper setting); --alpha >0 = inference-time SV)
-```
-
-### Quick start
+## Installation
 
 ```bash
-# Full pipeline (~55 min on one GPU)
-bash run_sft_example.sh
-
-# Skip Step A by reusing the bundled v_mean (~30 min total instead of ~55)
-SKIP_ACTS=1 bash run_sft_example.sh
+pip install "sv-training[vllm]"     # training + vLLM generation/evaluation
+sv-train --help
 ```
 
-This trains 1.5B-Instruct on GSM8K via Mean-SV-Add (α=0.5, layer 15), then
-evaluates at inference α=0 and α=0.5. Output adapter:
-`example_workdir_sft/student-1.5B-gsm8k-meansv-0.5/`.
+`pip install sv-training` without `[vllm]` installs only what training needs
+(`torch`, `transformers<5`, `peft`, `datasets`, `accelerate`). Optional extras:
+`[math]` adds `math-verify` for stricter AIME scoring, `[wandb]` adds logging, `[dev]` adds test and build tools.
 
-### Per-script reference (SFT)
-
-**1. `compute_acts.py` — student bootstraps + hidden caches**
+The quick-start data lives in this repository, not in the PyPI package. To run the quick start, clone the repo:
 
 ```bash
-python compute_acts.py \
-    --model Qwen/Qwen2.5-1.5B-Instruct \
-    --dataset gsm8k \
-    --out_path 1.5B-gsm8k_acts.pt
+git clone https://github.com/tiejin98/sv_training.git
+cd sv_training
+pip install -e ".[vllm]"
 ```
 
-Produces `1.5B-gsm8k_acts.pt` with keys `gt_acts`, `pred_acts` of shape
-`[N, num_layers, hidden]`, and writes `1.5B-gsm8k_acts_bootpreds.json` next
-to it (the student's own predictions on the train set, used as the "Pred"
-anchor for SV-SFT). The mean SV is `(gt_acts − pred_acts).mean(dim=0)[layer]`.
+## Method in one picture
 
-**2. `sft.py` — train**
+```text
+             teacher forcing, frozen model                      training (LoRA)
+prompt + reference answer ──► h_ref  (layer l, answer-token mean)
+prompt + own prediction   ──► h_pred                    prompt + label ──► block l ──► ... ──► loss
+                                │                                          │
+          v = h_ref − h_pred ───┴──────────── inject on answer tokens ─────┘
+          (per sample, or its mean)          add:   h ← h + α·v
+                                             slerp: h ← Slerp(h, v̂; α)  (norm-preserving)
+```
+
+| Paper name | Direction | Operation | α | CLI |
+| --- | --- | --- | --- | --- |
+| Mean-SV | dataset mean of `h_ref − h_pred` | add | 0.5 | `--method mean_sv_add` or `--sv mean.pt --op add` |
+| Per-sample Slerp | per-sample unit `h_ref − h_pred` | slerp | 0.1 | `--method slerp` or `--sv per_sample.pt --op slerp` |
+| Per-sample additive | per-sample unit `h_ref − h_pred` | add | 0.1 | `--method per_inst_add` |
+| Multi-layer | per-sample, at several layers | slerp | 0.1 | `--method sv_multi_layer --multi_layers 10,15,20` |
+| Random control | random Gaussian per sample | slerp | 0.1 | `--method random_gauss` |
+
+The default layer is `l = L/2 + 1`, which is 15 for the 28-layer Qwen2.5 models.
+
+## Quick Start
+
+The [`quick_start/`](quick_start/) folder holds intermediate results from the
+paper runs, so you can start in the middle of the pipeline instead of
+regenerating everything. It covers two settings:
+
+| Setting | Student | Reference | Bundled files | Paper result (GSM8K test acc.) |
+| --- | --- | --- | --- | --- |
+| **SV-SFT** | Qwen2.5-1.5B-Instruct | GSM8K GT answers | Mean-SV at layer 15, student bootstrap predictions | Plain 59.14 → Mean-SV **62.85**, Slerp **64.14** (Table 1) |
+| **SV-distillation** | Qwen2.5-1.5B-Instruct | Qwen3-8B, thinking mode | teacher outputs (7,473; 5,150 pass the verifier), student bootstrap predictions | Plain 65.81 → Mean-SV **67.55**, Slerp **67.40** (Table 3) |
+
+Bundled files (`quick_start/data/`):
+
+| File | What it is | Produced by |
+| --- | --- | --- |
+| `sv_Qwen2.5-1.5B_gsm8k_L15_mean.pt` | Mean-SV for SFT, layer 15, `‖v‖ = 11.45`, shape `[1536]` | step 02 |
+| `student_Qwen2.5-1.5B_gsm8k_bootpreds.json` | greedy Qwen2.5-1.5B-Instruct outputs on the 7,473 GSM8K train problems | step 01 |
+| `teacher_Qwen3-8B_gsm8k_think.json` | Qwen3-8B thinking-mode outputs on GSM8K train, with `<think>` chains and `pred_correct` flags | step 01 |
+
+The folder also holds the trained SV-SFT LoRA adapters for Mean-SV and Slerp in `quick_start/checkpoints/`, and the
+GSM8K test predictions for all six runs in the table in `quick_start/eval_outputs/`. The Slerp SFT adapter and its outputs
+come from a re-run on a different machine, which scored 64.06 instead of 64.14.
+
+Each step is a short script in [`quick_start/code/`](quick_start/code/). Run the scripts from the repository root.
+Outputs go to `quick_start/generated/`; set `WORK=...` to change that.
 
 ```bash
-# Plain SFT (no SV)
-python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
-    --method plain --output_dir outputs/plain-1.5B-gsm8k
+# 00  (CPU, seconds) inspect the bundled files
+bash quick_start/code/00_inspect_data.sh
+# 08  (CPU, seconds) re-score the paper's test outputs for all six runs
+bash quick_start/code/08_score_bundled_outputs.sh
 
-# Mean-SV-Add (raw v_mean × α at one layer)
-python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
-    --method mean_sv_add --alpha 0.5 --layer 15 \
-    --acts_cache 1.5B-gsm8k_acts.pt \
-    --output_dir outputs/meansv-1.5B-gsm8k
+# ---- Setting 1: SV-SFT --------------------------------------------------
+# 01  (optional) regenerate the bundled predictions        -> skip, bundled
+# 02  (optional) build the SFT vector from hidden states   -> skip, bundled
+bash quick_start/code/03_sft_train.sh      # ~25 min: LoRA SFT with bundled Mean-SV, α=0.5, layer 15
+bash quick_start/code/04_sft_eval.sh       # ~3 min:  GSM8K test accuracy (no SV at test time);
+                                           #          without step 03 it evaluates the bundled adapter
 
-# Per-instance Slerp SV-SFT (rotate h toward each instance's GT-direction)
-python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
-    --method slerp --alpha 0.1 --layer 15 \
-    --acts_cache 1.5B-gsm8k_acts.pt \
-    --output_dir outputs/slerp-1.5B-gsm8k
+# ---- Setting 2: SV-distillation ------------------------------------------
+bash quick_start/code/05_distill_build_vector.sh  # ~30 min: student acts on teacher vs. own outputs
+bash quick_start/code/06_distill_train.sh         # ~30 min: distil with Mean-SV, α=0.5, layer 15
+bash quick_start/code/07_distill_eval.sh          # ~3 min
 ```
 
-For Mean-SV-Add you can skip the acts cache and pass a precomputed
-direction: `--mean_dir_override sv_1.5b_gsm8k_layer15_meansv_direction.pt`.
+Times are for one 80 GB GPU. Each script is about five lines. They print the exact
+`sv-train` commands, so you can also copy those commands and run them yourself. `METHOD=plain` or
+`METHOD=slerp` switches the method (Slerp needs step 02 or 05 first to build per-sample vectors),
+for example `METHOD=plain bash quick_start/code/03_sft_train.sh`. `run_sft.sh` and
+`run_distill.sh` run a whole setting end to end. See [`quick_start/README.md`](quick_start/README.md) for
+each step's inputs, outputs and expected numbers.
 
-**Per-instance Slerp (`--method slerp`) needs the full per-instance deltas, so
-the bundled direction file is not sufficient — you must run `compute_acts.py`
-first to produce `*_acts.pt`.** Then:
+## Train with your own steering vector
+
+`sv-train train` injects **any vector file at any layer**:
 
 ```bash
-python compute_acts.py --model Qwen/Qwen2.5-1.5B-Instruct \
-    --dataset gsm8k --out_path 1.5B-gsm8k_acts.pt
-python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
-    --method slerp --alpha 0.1 --layer 15 \
-    --acts_cache 1.5B-gsm8k_acts.pt \
-    --output_dir outputs/slerp-1.5B-gsm8k
+# one vector for every training example, added at layer 15
+sv-train train --model Qwen/Qwen2.5-1.5B-Instruct --dataset gsm8k \
+    --sv my_vector.pt --layer 15 --op add --alpha 0.5 \
+    --output_dir outputs/my-run
+
+# one vector per training example ([N, D] tensor, row i = example i), Slerp
+sv-train train ... --sv my_per_sample.pt --layer 15 --op slerp --alpha 0.1
+
+# several vectors / layers at once: repeat --inject
+sv-train train ... \
+    --inject path=a.pt,layer=10,alpha=0.1 \
+    --inject path=b.pt,layer=15,alpha=0.5 \
+    --inject path=c.pt,layer=20,op=slerp,alpha=0.1,first_k=32
 ```
 
-**3. `infer_sv_vllm.py` — evaluate**
+Accepted vector files: `.pt` / `.npy` / `.safetensors` with
+
+- a `[D]` tensor: the same vector for every example,
+- an `[N, D]` tensor: row `i` is used for training example `i` (rows with norm 0 are skipped),
+- `{"direction": tensor}`, or `{"vectors": {layer: tensor}}` (also `"block_15"` keys),
+- an acts cache from `sv-train acts`. `--sv_kind mean` gives the dataset mean and `--sv_kind per_sample` keeps one vector per example.
+
+Other injection options: `--normalize` makes vectors unit length, `--first_k K` / `--skip_first_k K` steer only part of the
+answer, `--all_tokens` also steers prompt tokens, and `--alpha` can be negative. `--dataset` also accepts a
+`.json` / `.jsonl` file of `{"question": ..., "answer": ...}` records, so you can train on your own data. Distillation is
+the same command plus `--teacher_json teacher.json`.
+
+The same mechanism is available from Python, with or without the HF `Trainer`:
+
+```python
+import torch
+from sv_training import Injection, SteeringContext, attach, detach, load_vector
+
+v = load_vector("my_vector.pt")                          # [D] or [N, D]
+ctx = SteeringContext()
+handles = attach(model, [Injection(v, layer=15, alpha=0.5, op="add")], ctx)
+
+model.train()
+with ctx.batch(labels=labels, sample_idx=sample_idx):  # labels == -100 marks prompt tokens
+    loss = model(input_ids=input_ids, labels=labels).loss
+loss.backward()
+detach(handles)
+```
+
+`sv_training.trainer.SteeringTrainer` is a drop-in `transformers.Trainer` that does the `ctx.batch(...)`
+call for you, and `sv_training.train.train(TrainConfig(...))` is the full LoRA pipeline behind the CLI.
+
+## Full pipeline on a new model or dataset
 
 ```bash
-# Plain (no inference-time SV)
-python infer_sv_vllm.py \
-    --model_path outputs/meansv-1.5B-gsm8k \
-    --base_model_name Qwen/Qwen2.5-1.5B-Instruct \
-    --acts_cache 1.5B-gsm8k_acts.pt \
-    --dataset gsm8k --layer 15 --alpha 0.0 \
-    --out_name meansv-1.5B-gsm8k-eval-a0
+M=Qwen/Qwen2.5-7B-Instruct; D=math
 
-# Inference-time SV in the same direction
-python infer_sv_vllm.py \
-    --model_path outputs/meansv-1.5B-gsm8k \
-    --base_model_name Qwen/Qwen2.5-1.5B-Instruct \
-    --acts_cache 1.5B-gsm8k_acts.pt \
-    --dataset gsm8k --layer 15 --alpha 0.5 \
-    --out_name meansv-1.5B-gsm8k-eval-a0.5
+# 1. the student's own greedy predictions on the train split
+sv-train generate --model $M --dataset $D --max_new_tokens 512 --out preds.json
+#    (distillation only) teacher outputs
+sv-train generate --model Qwen/Qwen3-8B --dataset $D --enable_thinking 1 \
+    --max_new_tokens 4096 --out teacher.json
+
+# 2. answer-token hidden states on reference vs. own predictions (all layers)
+sv-train acts --model $M --dataset $D --preds_json preds.json --out acts.pt
+#    distillation: add  --reference_json teacher.json
+
+# 3. extract a vector at one layer (or pass acts.pt directly to --sv)
+sv-train vector --acts acts.pt --layer 15 --kind mean       --out sv_mean.pt
+sv-train vector --acts acts.pt --layer 15 --kind per_sample --out sv_per_sample.pt
+
+# 4. train (paper defaults: LoRA r=8, lr 5e-5, batch 1 x grad-accum 8, 1 epoch)
+sv-train train --model $M --dataset $D --sv sv_per_sample.pt --layer 15 \
+    --op slerp --alpha 0.1 --output_dir outputs/slerp-7B-$D
+#    distillation: add  --teacher_json teacher.json
+
+# 5. evaluate (greedy, vLLM); --alpha > 0 with --sv adds inference-time SV
+sv-train eval --model outputs/slerp-7B-$D --dataset $D
 ```
 
-Computes `v_mean` from the acts cache on the fly and adds `α · v_mean` to
-the layer's residual stream during decode.
+| Command | What it does | Hardware |
+| --- | --- | --- |
+| `sv-train generate` | greedy vLLM outputs on a split, with `pred_correct` flags | GPU |
+| `sv-train acts` | `gt_acts`, `pred_acts` of shape `[N, L, D]` (answer-token means, all layers) | GPU |
+| `sv-train vector` | mean or per-sample vector at one layer from an acts cache | CPU |
+| `sv-train train` | LoRA (or `--full_finetune`) SFT / distillation with SV injection | GPU |
+| `sv-train eval` | test accuracy; GSM8K, MATH(-500), MBPP, StrategyQA, AIME-24/25 | GPU |
+| `sv-train score` | re-score a `predictions.json` | CPU |
+| `sv-train inspect` | summarise vector / acts / prediction files | CPU |
 
----
-
-## Distillation
-
-The student trains on a teacher's outputs (instead of dataset GT), optionally
-with a steering vector pointing from "student-bootstrap manifold" to
-"teacher manifold".
-
-### Run order
-
-```
-       teacher_gen.py             (one run per teacher × dataset)
-              │
-              ▼  teacher_*.json
-       compute_acts.py            (one run per student × dataset; produces *_bootpreds.json)
-              │
-              ▼  *_bootpreds.json
-       compute_distill_acts.py    (teacher_json + student bootpreds → distill acts cache)
-              │
-              ▼  distill_*_acts.pt
-       sft.py  --distill_teacher_json TEACHER_JSON  --acts_cache DISTILL_ACTS
-              │
-              ▼  output adapter
-       infer_sv_vllm.py           (--alpha 0 = plain; --alpha >0 = inference-time SV)
-```
-
-### Quick start
-
-```bash
-bash run_thinking_distill_example.sh
-```
-
-Distills Qwen3-8B (thinking-mode) into Qwen2.5-1.5B-Instruct on GSM8K with
-Mean-SV-Add (α=0.5, layer 15). Uses the bundled `teacher_Qwen3-8B-gsm8k-think.json`
-and `student_1.5B-gsm8k-bootpreds.json`, so only the last three steps run:
-`compute_distill_acts.py` → `sft.py` → `infer_sv_vllm.py` (×2). About 40 min
-on one 80 GB GPU.
-
-### Per-script reference (distillation-only)
-
-`compute_acts.py`, `sft.py`, `infer_sv_vllm.py` work the same as in the SFT
-section. Two extras:
-
-**1. `teacher_gen.py` — generate teacher data (skip if you already have a teacher json)**
-
-```bash
-python teacher_gen.py \
-    --model Qwen/Qwen3-8B \
-    --dataset gsm8k \
-    --split train \
-    --enable_thinking 1 \
-    --out teacher_Qwen3-8B--gsm8k--think.json
-```
-
-Output: a JSON list of `{"question": ..., "pred": ..., "idx": ...}` records.
-For thinking-mode teachers the `<think>...</think>` chain is preserved in
-`pred` so the student can learn the chain.
-
-**2. `compute_distill_acts.py` — distillation acts cache**
-
-```bash
-python compute_distill_acts.py \
-    --student Qwen/Qwen2.5-1.5B-Instruct \
-    --teacher_json teacher_Qwen3-8B--gsm8k--think.json \
-    --student_preds_json 1.5B-gsm8k_acts_bootpreds.json \
-    --dataset gsm8k \
-    --out distill_1.5B__Qwen3-8B--gsm8k--think.pt
-```
-
-Same shape as `compute_acts.py`'s output, but `gt_acts` is on
-(prompt + teacher token) and `pred_acts` is on (prompt + student bootstrap).
-Distillation SV = "shift the student's residual toward the teacher's manifold".
-
-**3. `sft.py` with `--distill_teacher_json`**
-
-Add `--distill_teacher_json PATH` to any `sft.py` invocation to switch from
-GT-token SFT to teacher-token distillation. The acts cache passed to
-`--acts_cache` should be the distillation cache (from
-`compute_distill_acts.py`), not the plain SFT one.
-
-```bash
-# Plain distillation (no SV; learn teacher tokens only)
-python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
-    --method plain \
-    --distill_teacher_json teacher_Qwen3-8B--gsm8k--think.json \
-    --output_dir outputs/plain-distill-1.5B
-
-# Mean-SV-Add distillation
-python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
-    --method mean_sv_add --alpha 0.5 --layer 15 \
-    --acts_cache distill_1.5B__Qwen3-8B--gsm8k--think.pt \
-    --distill_teacher_json teacher_Qwen3-8B--gsm8k--think.json \
-    --output_dir outputs/meansv-distill-1.5B
-
-# Per-instance Slerp distillation
-python sft.py --dataset gsm8k --model_path Qwen/Qwen2.5-1.5B-Instruct \
-    --method slerp --alpha 0.1 --layer 15 \
-    --acts_cache distill_1.5B__Qwen3-8B--gsm8k--think.pt \
-    --distill_teacher_json teacher_Qwen3-8B--gsm8k--think.json \
-    --output_dir outputs/slerp-distill-1.5B
-```
-
-Eval is the same `infer_sv_vllm.py` as in the SFT section; just point
-`--acts_cache` at the distillation cache when you want inference-time SV.
----
+Built-in datasets: `gsm8k`, `math` (MATH-500 test split), `mbpp`, `strategyqa`, plus `aime24` / `aime25` for evaluation only.
 
 ## Notes
 
-- Layer indices are 0-based and exclude the embedding (`block_0` = output of
-  the first transformer block). Default = 15 (~middle of a 28-layer model).
-- `sft.py` uses HuggingFace `peft` LoRA (rank 8, α 16, all-linear) by default.
-- `beegfs_safe_save.py` exists because our shared scratch is BeeGFS and
-  intermittently returns EREMOTEIO on large `torch.save`/`load`. On local SSD
-  those calls are equivalent to plain `torch.save` / `torch.load`.
+- Layer indices are 0-based and exclude the embedding: layer `l` is the output of transformer block `l`
+  (`hidden_states[l + 1]` in HF). Blocks are found automatically for Qwen2/3, Llama, Gemma, Mistral and similar models.
+- Steering is applied only in training mode and only to answer tokens (`labels != -100`). In eval mode the hooks do nothing.
+- The best layer depends on the model family. In the paper, `l = 15` works for Qwen, while Llama-3.2-3B peaks at layers 10 and 19
+  (Section 4.2.3). For a new backbone, run a short layer sweep on held-out training data.
+- Code generation (MBPP) is a known failure case: the reference direction conflicts with the direction that makes tests pass.
+- The hook implementation is checked against the code used for the paper runs: `tests/test_steering.py`
+  asserts bit-identical logits and gradients for every method in fp32 and bf16.
+
+## Repository layout
+
+```text
+sv_training/      package: steering hooks, vector I/O, trainer, data, CLI
+quick_start/      bundled intermediate results, SFT adapters, paper eval outputs + step-by-step scripts
+tests/            CPU unit tests (tiny random models, no downloads)
+```
+
+Run `make test` to run the tests and `make check` to also check the CLI and the bundled data.
+
+## Citation
+
+```bibtex
+@inproceedings{chen2026steering,
+  title     = {Steering Vectors as a Training Signal in {LLM} Post-Training},
+  author    = {Chen, Tiejin and Vyas, Maunil and Yao, Huaiyuan and Wei, Hua},
+  booktitle = {Advances in Neural Information Processing Systems},
+  year      = {2026}
+}
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -1,0 +1,1 @@
+{"exp": "ablation-m2-meansv-add", "dataset": "gsm8k", "split": "test", "n": 1319, "accuracy": 0.6285064442759667, "avg_tokens": 139.32827899924186, "model_path": "outputs/main/ablation-m2-meansv-add", "enable_thinking": false}

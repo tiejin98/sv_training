@@ -1,0 +1,4 @@
+include README.md LICENSE CITATION.cff
+recursive-include tests *.py
+prune quick_start
+global-exclude *.py[cod] __pycache__

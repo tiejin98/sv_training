@@ -1,0 +1,1 @@
+{"exp": "plain-1.5B-gsm8k", "dataset": "gsm8k", "split": "test", "n": 1319, "accuracy": 0.5913570887035633, "avg_tokens": 125.5147839272176, "model_path": "outputs/main/plain-1.5B-gsm8k", "enable_thinking": false}

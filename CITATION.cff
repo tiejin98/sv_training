@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+title: "Steering Vectors as a Training Signal in LLM Post-Training"
+message: "If you use this code, please cite the NeurIPS 2026 paper."
+type: software
+authors:
+  - family-names: Chen
+    given-names: Tiejin
+  - family-names: Vyas
+    given-names: Maunil
+  - family-names: Yao
+    given-names: Huaiyuan
+  - family-names: Wei
+    given-names: Hua
+year: 2026
+repository-code: "https://github.com/tiejin98/sv_training"
+license: MIT
+preferred-citation:
+  type: conference-paper
+  title: "Steering Vectors as a Training Signal in LLM Post-Training"
+  authors:
+    - family-names: Chen
+      given-names: Tiejin
+    - family-names: Vyas
+      given-names: Maunil
+    - family-names: Yao
+      given-names: Huaiyuan
+    - family-names: Wei
+      given-names: Hua
+  conference:
+    name: "The 40th Conference on Neural Information Processing Systems (NeurIPS 2026)"
+  year: 2026

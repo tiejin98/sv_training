@@ -1,0 +1,1 @@
+{"exp": "D-Qwen3-8B--gsm8k--think-plain", "dataset": "gsm8k", "split": "test", "n": 1319, "accuracy": 0.6580742987111448, "avg_tokens": 670.0978013646702, "model_path": "outputs/main/D-Qwen3-8B--gsm8k--think--plain", "enable_thinking": false}
