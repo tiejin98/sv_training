@@ -1,10 +1,11 @@
 #!/bin/bash
-# Step 06 (GPU, ~30 min): distil Qwen3-8B (thinking) into Qwen2.5-1.5B-Instruct
-# on GSM8K. Trains on teacher outputs that pass the verifier and fit in 2048
-# tokens: 4829 of 7473.
-#   METHOD=mean_sv_add (default)   Table 3: 67.55
-#   METHOD=slerp                   Table 3: 67.40
-#   METHOD=plain                   Table 3: 65.81
+# Step 06 (GPU, ~30 min): distil Qwen3-8B (thinking) into Qwen2.5-1.5B-Instruct.
+# Trains on teacher outputs that pass the verifier and fit in 2048 tokens:
+# 4829 of 7473 on GSM8K, 2026 of 12000 on MATH (DATASET=math).
+#                                  Table 3:  GSM8K   MATH (MATH-500)
+#   METHOD=mean_sv_add (default)             67.55   31.20
+#   METHOD=slerp                             67.40   33.60
+#   METHOD=plain                             65.81   21.20
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 METHOD="${METHOD:-mean_sv_add}"
 TJSON=$(pick "$WORK/teacher_think.json" "$TEACHER_JSON")

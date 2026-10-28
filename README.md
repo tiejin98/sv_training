@@ -65,12 +65,13 @@ The default layer is `l = L/2 + 1`, which is 15 for the 28-layer Qwen2.5 models.
 
 The [`quick_start/`](quick_start/) folder holds intermediate results from the
 paper runs, so you can start in the middle of the pipeline instead of
-regenerating everything. It covers two settings:
+regenerating everything. It covers these settings:
 
-| Setting | Student | Reference | Bundled files | Paper result (GSM8K test acc.) |
+| Setting | Student | Reference | Bundled files | Paper result (test acc.) |
 | --- | --- | --- | --- | --- |
 | **SV-SFT** | Qwen2.5-1.5B-Instruct | GSM8K GT answers | Mean-SV at layer 15, student bootstrap predictions | Plain 59.14 → Mean-SV **62.85**, Slerp **64.14** (Table 1) |
-| **SV-distillation** | Qwen2.5-1.5B-Instruct | Qwen3-8B, thinking mode | teacher outputs (7,473; 5,150 pass the verifier), student bootstrap predictions | Plain 65.81 → Mean-SV **67.55**, Slerp **67.40** (Table 3) |
+| **SV-distillation, GSM8K** | Qwen2.5-1.5B-Instruct | Qwen3-8B, thinking mode | teacher outputs (7,473; 5,150 pass the verifier), student bootstrap predictions | Plain 65.81 → Mean-SV **67.55**, Slerp **67.40** (Table 3) |
+| **SV-distillation, MATH** | Qwen2.5-1.5B-Instruct | Qwen3-8B, thinking mode | teacher outputs (12,000; 5,772 pass the verifier), student bootstrap predictions | Plain 21.20 → Mean-SV **31.20**, Slerp **33.60** (Table 3, MATH-500) |
 
 Bundled files (`quick_start/data/`):
 
@@ -79,13 +80,14 @@ Bundled files (`quick_start/data/`):
 | `sv_Qwen2.5-1.5B_gsm8k_L15_mean.pt` | Mean-SV for SFT, layer 15, `‖v‖ = 11.45`, shape `[1536]` | step 02 |
 | `student_Qwen2.5-1.5B_gsm8k_bootpreds.json` | greedy Qwen2.5-1.5B-Instruct outputs on the 7,473 GSM8K train problems | step 01 |
 | `teacher_Qwen3-8B_gsm8k_think.json` | Qwen3-8B thinking-mode outputs on GSM8K train, with `<think>` chains and `pred_correct` flags | step 01 |
+| `student_Qwen2.5-1.5B_math_bootpreds.json`, `teacher_Qwen3-8B_math_think.json.zip` | the same two files for the 12,000 MATH train problems (the teacher file is zipped and extracted on first use) | step 01 |
 
 The folder also holds the trained SV-SFT LoRA adapters for Mean-SV and Slerp in `quick_start/checkpoints/`, and the
 GSM8K test predictions for all six runs in the table in `quick_start/eval_outputs/`. The Slerp SFT adapter and its outputs
 come from a re-run on a different machine, which scored 64.06 instead of 64.14.
 
 Each step is a short script in [`quick_start/code/`](quick_start/code/). Run the scripts from the repository root.
-Outputs go to `quick_start/generated/`; set `WORK=...` to change that.
+Outputs go to `quick_start/generated/<dataset>/`; set `WORK=...` to change that.
 
 ```bash
 # 00  (CPU, seconds) inspect the bundled files
@@ -104,6 +106,7 @@ bash quick_start/code/04_sft_eval.sh       # ~3 min:  GSM8K test accuracy (no SV
 bash quick_start/code/05_distill_build_vector.sh  # ~30 min: student acts on teacher vs. own outputs
 bash quick_start/code/06_distill_train.sh         # ~30 min: distil with Mean-SV, α=0.5, layer 15
 bash quick_start/code/07_distill_eval.sh          # ~3 min
+# On MATH: prefix each step with DATASET=math (evaluated on MATH-500)
 ```
 
 Times are for one 80 GB GPU. Each script is about five lines. They print the exact

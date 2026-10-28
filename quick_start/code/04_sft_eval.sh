@@ -3,11 +3,13 @@
 # The paper evaluates without any SV at test time (alpha = 0). Set
 # INFER_ALPHA=0.5 to additionally try inference-time steering (Fig. 2c: it does not help).
 # Without a step-03 adapter in $WORK, the bundled one in checkpoints/ is used
-# (mean_sv_add and slerp only), so this step also runs without training.
+# (GSM8K, mean_sv_add and slerp only), so this step also runs without training.
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 METHOD="${METHOD:-mean_sv_add}"
-ADAPTER="$(pick "$WORK/sft_${METHOD}" "$CKPT/sft_${METHOD}")"
-if [ ! -d "$ADAPTER" ]; then
+BUNDLED="$CKPT/sft_${METHOD}"
+[ "$DATASET" = gsm8k ] || BUNDLED=""
+ADAPTER="$(pick "$WORK/sft_${METHOD}" "$BUNDLED")"
+if [ -z "$ADAPTER" ] || [ ! -d "$ADAPTER" ]; then
   echo "no adapter for METHOD=$METHOD: run 03_sft_train.sh first" >&2; exit 1
 fi
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Step 05 (GPU, ~30 min): distillation steering vector, in the STUDENT's
 # hidden space: student on the teacher's (thinking) output minus student on
-# its own bootstrap prediction. Uses both bundled JSON files.
+# its own bootstrap prediction. Uses both bundled JSON files for $DATASET.
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 PREDS=$(pick "$WORK/student_bootpreds.json" "$BOOTPREDS")
 TJSON=$(pick "$WORK/teacher_think.json" "$TEACHER_JSON")

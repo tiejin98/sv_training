@@ -16,9 +16,10 @@ Each script prints the exact command it runs, so you can copy that command and c
 | Setting | Student | Reference completions | Steering | Paper result |
 | --- | --- | --- | --- | --- |
 | SV-SFT | Qwen2.5-1.5B-Instruct | GSM8K ground-truth solutions | Mean-SV, α = 0.5, layer 15 | 62.85 (Plain 59.14, Slerp 64.14), Table 1 |
-| SV-distillation | Qwen2.5-1.5B-Instruct | Qwen3-8B outputs, thinking mode | Mean-SV, α = 0.5, layer 15 | 67.55 (Plain 65.81, Slerp 67.40), Table 3 |
+| SV-distillation, GSM8K | Qwen2.5-1.5B-Instruct | Qwen3-8B outputs, thinking mode | Mean-SV, α = 0.5, layer 15 | 67.55 (Plain 65.81, Slerp 67.40), Table 3 |
+| SV-distillation, MATH (`DATASET=math`) | Qwen2.5-1.5B-Instruct | Qwen3-8B outputs, thinking mode | Mean-SV, α = 0.5, layer 15 | 31.20 (Plain 21.20, Slerp 33.60), Table 3 |
 
-All numbers are greedy GSM8K test accuracy (%, 1,319 problems) with no SV at test time. The main tables use a
+All numbers are greedy test accuracy (%) with no SV at test time, on GSM8K test (1,319 problems) or MATH-500. The main tables use a
 single seed (42). Across three seeds, SFT on 1.5B GSM8K gives Plain 58.81 ± 0.37 and Per-sample Slerp 62.75 ± 0.50
 (Table 4), which gives a sense of run-to-run variation.
 The bundled Slerp SFT adapter and its outputs come from a re-run on a different machine, which scored 64.06 instead of 64.14.
@@ -30,8 +31,10 @@ The bundled Slerp SFT adapter and its outputs come from a re-run on a different 
 | `sv_Qwen2.5-1.5B_gsm8k_L15_mean.pt` | `{"direction": [1536], "meta": ...}`, the mean over 7,473 train problems of `h(GT) − h(own prediction)` at layer 15, `‖v‖ = 11.45` | 03 |
 | `student_Qwen2.5-1.5B_gsm8k_bootpreds.json` | `[{"idx", "pred"}]`: greedy Qwen2.5-1.5B-Instruct output for each GSM8K train problem | 02, 05 |
 | `teacher_Qwen3-8B_gsm8k_think.json` | `[{"idx", "question", "gt_answer", "pred", "pred_correct", "n_tokens"}]`: Qwen3-8B thinking-mode outputs. `pred` keeps the `<think>` chain, and 5,150 of the 7,473 outputs are correct | 05, 06 |
+| `student_Qwen2.5-1.5B_math_bootpreds.json` | same as the GSM8K file, for the 12,000 MATH train problems | 05 (`DATASET=math`) |
+| `teacher_Qwen3-8B_math_think.json.zip` | same as the GSM8K file, for MATH train; 5,772 of the 12,000 outputs are correct. Zipped because it is 121 MB unpacked; the scripts extract it into `WORK` on first use | 05, 06 (`DATASET=math`) |
 
-Run `bash quick_start/code/00_inspect_data.sh` to print shapes, norms and counts for these files. It runs on CPU in a few seconds.
+Run `bash quick_start/code/00_inspect_data.sh` (or `DATASET=math bash ...`) to print shapes, norms and counts for these files. It runs on CPU in a few seconds.
 
 ## Trained adapters (`checkpoints/`) and paper outputs (`eval_outputs/`)
 
@@ -60,8 +63,8 @@ model = PeftModel.from_pretrained(base, "quick_start/checkpoints/sft_mean_sv_add
 
 ## Steps
 
-Outputs go to `quick_start/generated/`. To write them somewhere else, set `WORK=/path` (an acts cache takes about 2.5 GB).
-Other settings you can change: `STUDENT`, `TEACHER`, `LAYER`, `METHOD` (`mean_sv_add` | `slerp` | `plain`) and
+Outputs go to `quick_start/generated/<dataset>/`. To write them somewhere else, set `WORK=/path` (an acts cache takes about 2.5 GB).
+Other settings you can change: `DATASET` (`gsm8k` | `math`), `STUDENT`, `TEACHER`, `LAYER`, `METHOD` (`mean_sv_add` | `slerp` | `plain`) and
 `EXTRA_ARGS` (passed to `sv-train train`, e.g. `EXTRA_ARGS="--report_to wandb"`).
 
 | Step | Script | Needs | Output | Time (1× 80 GB GPU) |
@@ -99,7 +102,7 @@ The training step runs:
 ```bash
 sv-train train --model Qwen/Qwen2.5-1.5B-Instruct --dataset gsm8k \
     --sv quick_start/data/sv_Qwen2.5-1.5B_gsm8k_L15_mean.pt --op add --alpha 0.5 --layer 15 \
-    --output_dir quick_start/generated/sft_mean_sv_add
+    --output_dir quick_start/generated/gsm8k/sft_mean_sv_add
 ```
 
 Other methods:
@@ -129,3 +132,13 @@ tokens (`--max_context_len`), which leaves 4,829 training examples. The vector i
 as in the paper runs.
 
 `METHOD=plain` and `METHOD=slerp` work the same way as in Setting 1.
+
+To distil on MATH instead, set `DATASET=math`. The steps are the same, and the student is evaluated on MATH-500:
+
+```bash
+DATASET=math bash quick_start/code/05_distill_build_vector.sh
+DATASET=math bash quick_start/code/06_distill_train.sh
+DATASET=math bash quick_start/code/07_distill_eval.sh
+```
+
+On MATH, 2,026 of the 5,772 correct teacher outputs fit in 2,048 tokens and are used for training. The vector is averaged over all 12,000 problems.

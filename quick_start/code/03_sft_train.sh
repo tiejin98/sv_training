@@ -1,5 +1,5 @@
 #!/bin/bash
-# Step 03 (GPU, ~25 min): SV-SFT of Qwen2.5-1.5B-Instruct on GSM8K.
+# Step 03 (GPU, ~25 min): SV-SFT of Qwen2.5-1.5B-Instruct on GSM8K (the bundled vector is GSM8K).
 #   METHOD=mean_sv_add (default): bundled mean vector, h <- h + 0.5 v   (Table 1: 62.85)
 #   METHOD=slerp: per-sample Slerp, alpha 0.1, needs step 02           (Table 1: 64.14)
 #   METHOD=plain: no steering vector                                    (Table 1: 59.14)

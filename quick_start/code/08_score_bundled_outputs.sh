@@ -6,5 +6,5 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 for run_dir in "$REF_EVAL"/*; do
   echo "== $(basename "$run_dir")"
-  run $SV_TRAIN score --predictions "$run_dir/predictions.json" --dataset "$DATASET"
+  run $SV_TRAIN score --predictions "$run_dir/predictions.json" --dataset gsm8k
 done

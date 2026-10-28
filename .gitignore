@@ -10,5 +10,5 @@ outputs/
 quick_start/generated/
 
 # release archives
-*.zip
+/*.zip
 Neurips2026_Steering_Vector_Camera_Ready.pdf
