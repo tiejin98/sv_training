@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![PyPI](https://img.shields.io/pypi/v/sv-training.svg)](https://pypi.org/project/sv-training/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/tiejin98/sv_training/blob/main/LICENSE)
 [![CI](https://github.com/tiejin98/sv_training/actions/workflows/ci.yml/badge.svg)](https://github.com/tiejin98/sv_training/actions/workflows/ci.yml)
 
 Code for the NeurIPS 2026 paper **"Steering Vectors as a Training Signal in LLM
@@ -63,7 +63,7 @@ The default layer is `l = L/2 + 1`, which is 15 for the 28-layer Qwen2.5 models.
 
 ## Quick Start
 
-The [`quick_start/`](quick_start/) folder holds intermediate results from the
+The [`quick_start/`](https://github.com/tiejin98/sv_training/tree/main/quick_start/) folder holds intermediate results from the
 paper runs, so you can start in the middle of the pipeline instead of
 regenerating everything. It covers these settings:
 
@@ -86,7 +86,7 @@ The folder also holds the trained SV-SFT LoRA adapters for Mean-SV and Slerp in 
 GSM8K test predictions for all six runs in the table in `quick_start/eval_outputs/`. The Slerp SFT adapter and its outputs
 come from a re-run on a different machine, which scored 64.06 instead of 64.14.
 
-Each step is a short script in [`quick_start/code/`](quick_start/code/). Run the scripts from the repository root.
+Each step is a short script in [`quick_start/code/`](https://github.com/tiejin98/sv_training/tree/main/quick_start/code/). Run the scripts from the repository root.
 Outputs go to `quick_start/generated/<dataset>/`; set `WORK=...` to change that.
 
 ```bash
@@ -113,7 +113,7 @@ Times are for one 80 GB GPU. Each script is about five lines. They print the exa
 `sv-train` commands, so you can also copy those commands and run them yourself. `METHOD=plain` or
 `METHOD=slerp` switches the method (Slerp needs step 02 or 05 first to build per-sample vectors),
 for example `METHOD=plain bash quick_start/code/03_sft_train.sh`. `run_sft.sh` and
-`run_distill.sh` run a whole setting end to end. See [`quick_start/README.md`](quick_start/README.md) for
+`run_distill.sh` run a whole setting end to end. See [`quick_start/README.md`](https://github.com/tiejin98/sv_training/blob/main/quick_start/README.md) for
 each step's inputs, outputs and expected numbers.
 
 ## Train with your own steering vector
@@ -242,4 +242,4 @@ Run `make test` to run the tests and `make check` to also check the CLI and the 
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/tiejin98/sv_training/blob/main/LICENSE).
